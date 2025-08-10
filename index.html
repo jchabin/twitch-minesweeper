@@ -1,0 +1,246 @@
+<!-- https://tcrf.net/Minesweeper_(Windows,_1990)/en -->
+
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  #game {
+    image-rendering: pixelated;
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+  }
+  .hidden {
+    display: none;
+  }
+  .explosion {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    image-rendering: pixelated;
+    height: 100%;
+    width: 100%;
+    object-fit: contain;
+  }
+</style>
+
+<video src="explosion.webm" class="hidden"></video>
+<img src="sprite.png" class="hidden" id="sprite">
+
+<canvas id="game"></canvas>
+
+<script>
+  var socket = new WebSocket("wss://irc-ws.chat.twitch.tv/");
+  const params = new URLSearchParams(window.location.search);
+
+  const ROWS = parseInt(params.get("h") ?? "8"), COLS = parseInt(params.get("w") ?? "8");
+  const DIFFICULTY = params.get("d") ?? "0";
+
+  const DIFF_OPTIONS = {
+    "0": 10 / 8 / 8,
+    "1": 0.175,
+    "2": 99 / 30 / 16,
+    "3": 0.25,
+    "4": 0.35,
+  }
+
+  const MINECOUNT = Math.round(ROWS * COLS * (DIFF_OPTIONS[DIFFICULTY] ?? DIFF_OPTIONS["0"]));
+  const MINESIZE = 16;
+
+
+  const gameCanvas = document.getElementById("game");
+  gameCanvas.height = (ROWS + 1) * MINESIZE;
+  gameCanvas.width = (COLS + 1) * MINESIZE;
+
+  const sprite = document.getElementById("sprite");
+
+  const ctx = gameCanvas.getContext("2d");
+
+  var gameBoard = [];
+  var awaitingFirstMove = true;
+
+  function populateBoard(skipMines) {
+    gameBoard = [];
+
+    for(var r = 0; r < ROWS; r++) {
+      gameBoard.push([]);
+      for(var c = 0; c < COLS; c++) {
+        gameBoard[r].push({
+          open: false,
+          count: 0,
+          mine: false,
+          exp: false,
+          flag: false
+        });
+      }
+    }
+
+    if(skipMines) return;
+
+    for(var i = 0; i < MINECOUNT; i++) {
+      const r = Math.floor(Math.random() * ROWS);
+      const c = Math.floor(Math.random() * COLS);
+
+      if(!gameBoard[r][c].mine) {
+        gameBoard[r][c].mine = true;
+        for(var lr = Math.max(0, r - 1); lr < Math.min(ROWS, r + 2); lr++) {
+          for(var lc = Math.max(0, c - 1); lc < Math.min(COLS, c + 2); lc++) {
+            gameBoard[lr][lc].count++;
+          }
+        }
+      } else i--;
+    }
+  }
+
+  function openSquare(x, y) {
+    const gb = gameBoard[y][x]
+    if(gb.mine) {
+      gb.exp = true;
+
+      for(var r = 0; r < ROWS; r++) {
+        for(var c = 0; c < COLS; c++) {
+          if(gameBoard[r][c].mine || gameBoard[r][c].flag)
+            gameBoard[r][c].open = true;
+        }
+      }
+
+      const exp = document.createElement("VIDEO");
+      exp.src = "explosion.webm";
+      exp.className = "explosion";
+      exp.muted = true;
+      exp.playsinline = true;
+      exp.autoplay = true;
+      document.body.appendChild(exp);
+      exp.play();
+      setTimeout(() => {
+        document.body.removeChild(exp);
+      }, 1700);
+
+      setTimeout(populateBoard, 5000);
+    } else {
+      gb.open = true;
+      if(gb.count == 0) {
+        for(var lr = Math.max(0, y - 1); lr < Math.min(ROWS, y + 2); lr++) {
+          for(var lc = Math.max(0, x - 1); lc < Math.min(COLS, x + 2); lc++) {
+            if(!gameBoard[lr][lc].open) {
+              openSquare(lc, lr);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  populateBoard(true);
+
+  var awaitingPong = false;
+  setInterval(() => {
+    if(awaitingPong) {
+      socket = new WebSocket("wss://irc-ws.chat.twitch.tv/");
+
+      socket.addEventListener("open", e => {
+        socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership");
+        socket.send("PASS SCHMOOPIIE");
+        socket.send("NICK justinfan18858");
+      });
+    }
+
+    socket.send("PING");
+    awaitingPong = true;
+  }, 10000);
+
+  socket.addEventListener("open", e => {
+    socket.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership");
+    socket.send("PASS SCHMOOPIIE");
+    socket.send("NICK justinfan18858");
+  });
+
+  socket.addEventListener("message", e => {
+    if(e.data.match(/^:tmi.twitch.tv 001 justinfan18858 :Welcome, GLHF!/)) {
+      socket.send("JOIN #" + params.get("c"));
+    }
+
+    const username = (e.data.match(/display-name=([^;]+)/) ?? [])[1];
+
+    const mineCommand = e.data.match(/!mine\s*(\d+),\s*(\d+)/);
+
+    if(mineCommand) {
+      const x = parseInt(mineCommand[1]) - 1, y = parseInt(mineCommand[2]) - 1;
+
+      console.log(x, y);
+
+      if(!isNaN(x) && !isNaN(y) && x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+        if(awaitingFirstMove) {
+          do {
+            populateBoard();
+          } while(gameBoard[y][x].count != 0 || gameBoard[y][x].mine);
+
+          console.log()
+
+          awaitingFirstMove = false;
+        }
+
+        openSquare(x, y);
+      }
+
+    }
+
+    const flagCommand = e.data.match(/!flag\s*(\d+),\s*(\d+)/);
+
+    if(flagCommand) {
+      const x = parseInt(flagCommand[1]) - 1, y = parseInt(flagCommand[2]) - 1;
+
+      console.log(x, y);
+
+      if(!isNaN(x) && !isNaN(y) && x >= 0 && x < COLS && y >= 0 && y < ROWS) {
+        if(!gameBoard[y][x].open) {
+          gameBoard[y][x].flag = !gameBoard[y][x].flag;
+        }
+      }
+    }
+
+    awaitingPong = false;
+  });
+
+  function render() {
+    requestAnimationFrame(render);
+
+    ctx.fillStyle = "#c0c0c0";
+    ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+    for(var r = 0; r < ROWS; r++) {
+      for(var c = 0; c < COLS; c++) {
+        const gb = gameBoard[r][c];
+        let spriteVal = 0;
+        if(gb.open) {
+          if(gb.exp) {
+            spriteVal = 3;
+          } else if(gb.mine) {
+            spriteVal = 5;
+          } else if(gb.flag) {
+            spriteVal = 4;
+          } else {
+            spriteVal = 15 - gb.count;
+          }
+        } else if(gb.flag) {
+          spriteVal = 1;
+        }
+        ctx.drawImage(sprite, 0, spriteVal * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
+      }
+    }
+
+    ctx.fillStyle = "black";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for(var r = 0; r < ROWS; r++) {
+      ctx.fillText(r + 1, 0.5 * MINESIZE, (r + 1.5) * MINESIZE);
+    }
+    for(var c = 0; c < COLS; c++) {
+      ctx.fillText(c + 1, (c + 1.5) * MINESIZE, 0.5 * MINESIZE);
+    }
+  }
+
+  render();
+</script>
