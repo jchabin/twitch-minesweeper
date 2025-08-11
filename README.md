@@ -1,14 +1,14 @@
 # twitch-minesweeper
 
 ```
-https://jchabin.github.io/twitch-minesweeper?c=CHANNEL_NAME&w=BOARD_WIDTH&h=BOARD_HEIGHT&d=DIFFICULTY
+https://jchabin.github.io/twitch-minesweeper?c=CHANNEL_NAME&w=WIDTH&h=HEIGHT&d=DIFFICULTY
 ```
 Add this as an OBS source, replace the parameters as specified below.
 | Param | Description |
 |-|-|
 | **CHANNEL_NAME** | Twitch channel name |
-| **BOARD_WIDTH** | Width of the game board -- Defaults to 8 |
-| **BOARD_HEIGHT** | Height of the game board -- Defaults to 8 |
+| **WIDTH** | Width of the game board -- Defaults to 8 |
+| **HEIGHT** | Height of the game board -- Defaults to 8 |
 | **DIFFICULTY** | Integer for difficulty, see below for more information -- Defaults to 0 |
 
 ---
