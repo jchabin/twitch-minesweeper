@@ -1,4 +1,5 @@
 <!-- https://tcrf.net/Minesweeper_(Windows,_1990)/en -->
+<!-- https://www.spriters-resource.com/custom_edited/minesweepercustoms/sheet/79569/ -->
 
 <style>
   * {
@@ -29,6 +30,8 @@
 <video src="explosion.webm" class="hidden"></video>
 <video src="yippee.webm" class="hidden"></video>
 <img src="sprite.png" class="hidden" id="sprite">
+<img src="smilesprite.png" class="hidden" id="smilesprite">
+<img src="numbersprite.png" class="hidden" id="numbersprite">
 
 <canvas id="game"></canvas>
 
@@ -52,11 +55,15 @@
   const MINECOUNT = Math.round(ROWS * COLS * (DIFF_OPTIONS[DIFFICULTY] ?? DIFF_OPTIONS["0"]));
   const MINESIZE = 16;
 
+  const TOP_SIZE = 28;
+
   const gameCanvas = document.getElementById("game");
-  gameCanvas.height = (ROWS + 2) * MINESIZE;
+  gameCanvas.height = TOP_SIZE + (ROWS + 2) * MINESIZE;
   gameCanvas.width = (COLS + 1) * MINESIZE;
 
   const sprite = document.getElementById("sprite");
+  const smilesprite = document.getElementById("smilesprite");
+  const numbersprite = document.getElementById("numbersprite");
 
   const ctx = gameCanvas.getContext("2d");
 
@@ -64,13 +71,19 @@
   var awaitingFirstMove = true;
   var fault = "";
   var cellsLeft = 1;
+  var minesLeft = MINECOUNT;
   var gameWon = false;
+  var startTime = 0;
+  var runningTime = 0;
 
   function populateBoard(skipMines) {
     awaitingFirstMove = true;
     gameBoard = [];
     fault = "";
     gameWon = false;
+    minesLeft = MINECOUNT;
+    startTime = Date.now();
+    runningTime = Date.now();
 
     for(var r = 0; r < ROWS; r++) {
       gameBoard.push([]);
@@ -226,12 +239,11 @@
           setTimeout(populateBoard, 5000);
         }
       }
-
     }
 
     const flagCommand = e.data.match(/!flag\s*(\d+),\s*(\d+)/);
 
-    if(flagCommand) {
+    if(!awaitingFirstMove && flagCommand) {
       const x = parseInt(flagCommand[1]) - 1, y = parseInt(flagCommand[2]) - 1;
 
       console.log(x, y);
@@ -239,7 +251,13 @@
       if(!isNaN(x) && !isNaN(y) && x >= 0 && x < COLS && y >= 0 && y < ROWS) {
         const gb = gameBoard[y][x];
         if(!gb.open) {
-          gb.flag = !gb.flag;
+          if(gb.flag) {
+            gb.flag = false;
+            minesLeft++;
+          } else {
+            gb.flag = true;
+            minesLeft--;
+          }
           gb.username = username;
           gb.lastInteracted = 1;
         }
@@ -256,6 +274,8 @@
     var nt = Date.now();
     var warp = (nt - lt) / 16;
     lt = nt;
+
+    if(fault.length == 0) runningTime = nt;
 
     ctx.fillStyle = "#c0c0c0";
     ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
@@ -277,17 +297,37 @@
         } else if(gb.flag) {
           spriteVal = 1;
         }
-        ctx.drawImage(sprite, 0, spriteVal * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
+        ctx.drawImage(sprite, 0, spriteVal * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, TOP_SIZE + (r + 1) * MINESIZE, MINESIZE, MINESIZE);
 
         if(gb.lastInteracted > 0) {
           ctx.globalAlpha = gb.lastInteracted;
 
           ctx.fillStyle = "#0f0";
-          ctx.fillRect((c + 1) * MINESIZE, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
+          ctx.fillRect((c + 1) * MINESIZE, TOP_SIZE + (r + 1) * MINESIZE, MINESIZE, MINESIZE);
 
           ctx.globalAlpha = 1;
         }
       }
+    }
+
+    ctx.drawImage(smilesprite,
+      0, (fault.length == 0 ? 4 : gameWon ? 1 : 2) * 24,
+      24, 24,
+      gameCanvas.width / 2 - 12, TOP_SIZE / 2 - 12,
+      24, 24
+    );
+
+    const nLookup = "- 9876543210";
+    const mString = (minesLeft + "").padStart(3, " ").substr(-3);
+
+    for(var i = 0; i < mString.length; i++) {
+      ctx.drawImage(numbersprite, 0, nLookup.indexOf(mString[i]) * 23, 13, 23, 2 + 13 * i, 2, 13, 23);
+    }
+
+    const tString = (Math.floor((runningTime - startTime) / 1000) + "").padStart(3, " ").substr(-3);
+
+    for(var i = 0; i < tString.length; i++) {
+      ctx.drawImage(numbersprite, 0, nLookup.indexOf(tString[i]) * 23, 13, 23, gameCanvas.width + 13 * (i - 3) - 2, 2, 13, 23);
     }
 
     ctx.font = "12px monospace";
@@ -295,14 +335,14 @@
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     for(var r = 0; r < ROWS; r++) {
-      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, 0, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
-      ctx.fillText(r + 1, 0.5 * MINESIZE, (r + 1.5) * MINESIZE);
+      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, 0, TOP_SIZE + (r + 1) * MINESIZE, MINESIZE, MINESIZE);
+      ctx.fillText(r + 1, 0.5 * MINESIZE, TOP_SIZE + (r + 1.5) * MINESIZE);
     }
     for(var c = 0; c < COLS; c++) {
-      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, 0, MINESIZE, MINESIZE);
-      ctx.fillText(c + 1, (c + 1.5) * MINESIZE, 0.5 * MINESIZE);
+      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, TOP_SIZE, MINESIZE, MINESIZE);
+      ctx.fillText(c + 1, (c + 1.5) * MINESIZE, TOP_SIZE + 0.5 * MINESIZE);
     }
-    ctx.fillText("!mine x,y  !flag x,y", gameCanvas.width / 2, (ROWS + 1.5) * MINESIZE);
+    ctx.fillText("!mine x,y  !flag x,y", gameCanvas.width / 2, TOP_SIZE + (ROWS + 1.5) * MINESIZE);
 
     for(var r = 0; r < ROWS; r++) {
       for(var c = 0; c < COLS; c++) {
@@ -312,7 +352,7 @@
           ctx.globalAlpha = gb.lastInteracted;
 
           ctx.fillStyle = "black";
-          ctx.fillText(gb.username, (c + 1.5) * MINESIZE, (r + 1.5) * MINESIZE);
+          ctx.fillText(gb.username, (c + 1.5) * MINESIZE, TOP_SIZE + (r + 1.5) * MINESIZE);
 
           gb.lastInteracted -= warp * 0.01;
           ctx.globalAlpha = 1;
