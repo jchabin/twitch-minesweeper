@@ -27,6 +27,7 @@
 </style>
 
 <video src="explosion.webm" class="hidden"></video>
+<video src="yippee.webm" class="hidden"></video>
 <img src="sprite.png" class="hidden" id="sprite">
 
 <canvas id="game"></canvas>
@@ -60,11 +61,14 @@
   var gameBoard = [];
   var awaitingFirstMove = true;
   var fault = "";
+  var cellsLeft = 1;
+  var gameWon = false;
 
   function populateBoard(skipMines) {
     awaitingFirstMove = true;
     gameBoard = [];
     fault = "";
+    gameWon = false;
 
     for(var r = 0; r < ROWS; r++) {
       gameBoard.push([]);
@@ -82,6 +86,8 @@
     }
 
     if(skipMines) return;
+
+    cellsLeft = ROWS * COLS - MINECOUNT;
 
     for(var i = 0; i < MINECOUNT; i++) {
       const r = Math.floor(Math.random() * ROWS);
@@ -128,15 +134,25 @@
       gb.open = true;
       gb.lastInteracted = 1;
       gb.username = username;
+      cellsLeft--;
+
+      let didWin = false;
+
       if(gb.count == 0) {
         for(var lr = Math.max(0, y - 1); lr < Math.min(ROWS, y + 2); lr++) {
           for(var lc = Math.max(0, x - 1); lc < Math.min(COLS, x + 2); lc++) {
             if(!gameBoard[lr][lc].open) {
-              openSquare(lc, lr, "");
+              didWin |= openSquare(lc, lr, "");
             }
           }
         }
       }
+
+      if(cellsLeft <= 0) {
+        return true;
+      }
+
+      return didWin;
     }
   }
 
@@ -169,6 +185,8 @@
       socket.send("JOIN #" + params.get("c"));
     }
 
+    if(gameWon) return;
+
     const username = (e.data.match(/display-name=([^;]+)/) ?? [])[1];
 
     const mineCommand = e.data.match(/!mine\s*(\d+),\s*(\d+)/);
@@ -187,7 +205,24 @@
           awaitingFirstMove = false;
         }
 
-        openSquare(x, y, username);
+        if(openSquare(x, y, username)){
+          fault = username;
+          gameWon = true;
+
+          const yip = document.createElement("VIDEO");
+          yip.src = "yippee.webm";
+          yip.className = "explosion";
+          yip.muted = true;
+          yip.playsinline = true;
+          yip.autoplay = true;
+          document.body.appendChild(yip);
+          yip.play();
+          setTimeout(() => {
+            document.body.removeChild(yip);
+          }, 1200);
+
+          setTimeout(populateBoard, 5000);
+        }
       }
 
     }
@@ -253,7 +288,20 @@
       }
     }
 
-    ctx.font = "10px monospace";
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "black";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for(var r = 0; r < ROWS; r++) {
+      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, 0, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
+      ctx.fillText(r + 1, 0.5 * MINESIZE, (r + 1.5) * MINESIZE);
+    }
+    for(var c = 0; c < COLS; c++) {
+      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, 0, MINESIZE, MINESIZE);
+      ctx.fillText(c + 1, (c + 1.5) * MINESIZE, 0.5 * MINESIZE);
+    }
+    ctx.fillText("!mine x,y  !flag x,y", gameCanvas.width / 2, (ROWS + 1.5) * MINESIZE);
+
     for(var r = 0; r < ROWS; r++) {
       for(var c = 0; c < COLS; c++) {
         const gb = gameBoard[r][c];
@@ -270,22 +318,9 @@
       }
     }
 
-    ctx.fillStyle = "black";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for(var r = 0; r < ROWS; r++) {
-      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, 0, (r + 1) * MINESIZE, MINESIZE, MINESIZE);
-      ctx.fillText(r + 1, 0.5 * MINESIZE, (r + 1.5) * MINESIZE);
-    }
-    for(var c = 0; c < COLS; c++) {
-      ctx.drawImage(sprite, 0, 15 * MINESIZE, MINESIZE, MINESIZE, (c + 1) * MINESIZE, 0, MINESIZE, MINESIZE);
-      ctx.fillText(c + 1, (c + 1.5) * MINESIZE, 0.5 * MINESIZE);
-    }
-    ctx.fillText("!mine x,y   !flag x,y", gameCanvas.width / 2, (ROWS + 1.5) * MINESIZE);
-
     ctx.font = "24px monospace";
     if(fault.length > 0) {
-      ctx.fillStyle = "red";
+      ctx.fillStyle = gameWon ? "#0f0" : "red";
       const width = ctx.measureText(fault).width;
       ctx.fillRect(gameCanvas.width / 2 - width / 2, gameCanvas.height / 2 - 15, width, 30);
       ctx.fillStyle = "black";
